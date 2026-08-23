@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ---------- Serve static files ----------
+// Serve static files from repo root /public
 app.use(express.static(path.join(__dirname, "../../public")));
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "../../public/index.html"));
@@ -64,7 +64,7 @@ async function initDb() {
 }
 initDb();
 
-// ---------- Email Transporter ----------
+// ---------- Email ----------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -80,8 +80,7 @@ async function sendResetEmail(toEmail, resetLink) {
       subject: "Reset your password",
       html: `
         <h2>Reset your password</h2>
-        <p>Click below to reset your password. This link expires in 30 minutes.</p>
-        <a href="${resetLink}">Reset Password</a>
+        <p>Click <a href="${resetLink}">here</a> to reset. This link expires in 30 minutes.</p>
         <p>Or paste this link: ${resetLink}</p>
       `,
     });
@@ -110,56 +109,35 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ---------- OpenRouter AI with fallback ----------
+// ---------- OpenRouter AI ----------
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-// List of known free models (you can add/remove)
-const FREE_MODELS = [
-  "deepseek/deepseek-chat:free",
-  "mistralai/mistral-7b-instruct:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "google/gemini-2.0-flash-exp:free",
-  "qwen/qwen-2.5-72b-instruct:free",
-];
+async function getAIResponse(messages) {
+  const response = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      "HTTP-Referer": process.env.APP_URL || "https://your-app.vercel.app",
+      "X-Title": "AI Chat",
+    },
+    body: JSON.stringify({
+      model: "deepseek/deepseek-chat:free",
+      messages: messages,
+    }),
+  });
 
-async function getOpenRouterResponse(messages) {
-  let lastError = null;
-  for (const model of FREE_MODELS) {
-    try {
-      const response = await fetch(OPENROUTER_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "HTTP-Referer": process.env.APP_URL || "https://your-app.vercel.app",
-          "X-Title": "AI Chat App",
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        lastError = `Model ${model} failed: ${response.status} - ${errorText}`;
-        continue;
-      }
-
-      const data = await response.json();
-      if (!data.choices || data.choices.length === 0) {
-        lastError = `Model ${model} returned no choices`;
-        continue;
-      }
-
-      return data.choices[0].message.content;
-    } catch (err) {
-      lastError = err.message;
-      continue;
-    }
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter error (${response.status}): ${errorText}`);
   }
-  throw new Error(`All OpenRouter models failed. Last error: ${lastError}`);
+
+  const data = await response.json();
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error("No response from AI");
+  }
+  return data.choices[0].message.content;
 }
 
 // ---------- AUTH ROUTES ----------
@@ -421,7 +399,7 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       content: row.content,
     }));
 
-    const aiResponse = await getOpenRouterResponse(history);
+    const aiResponse = await getAIResponse(history);
 
     await client.query(
       "INSERT INTO messages (conversation_id, role, content, created_at) VALUES ($1, $2, $3, $4)",
@@ -466,7 +444,7 @@ app.delete("/api/account", authMiddleware, async (req, res) => {
   }
 });
 
-// ---------- START SERVER ----------
+// ---------- START ----------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
