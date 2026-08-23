@@ -12,7 +12,14 @@ const path = require("path");
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "../public")));
+
+// ---------- Serve static files from the correct public folder ----------
+app.use(express.static(path.join(__dirname, "../../public")));
+
+// ---------- Root route (serves index.html) ----------
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "../../public/index.html"));
+});
 
 // ---------- Database (PostgreSQL via Neon) ----------
 const pool = new Pool({
@@ -112,7 +119,7 @@ async function getGeminiResponse(messages) {
   const chat = model.startChat({
     history: messages.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
   });
-  const result = await chat.sendMessage(""); // Empty to continue
+  const result = await chat.sendMessage("");
   return result.response.text();
 }
 
@@ -192,7 +199,6 @@ app.post("/api/forgot-password", async (req, res) => {
   try {
     const result = await client.query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
     if (result.rows.length === 0) {
-      // Don't reveal if email exists
       return res.json({ message: "If that email is registered, a reset link has been sent." });
     }
     const token = crypto.randomBytes(32).toString("hex");
@@ -421,7 +427,6 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    // Handle Gemini-specific errors
     if (err.message?.includes("API key")) {
       return res.status(500).json({ error: "AI service configuration error" });
     }
