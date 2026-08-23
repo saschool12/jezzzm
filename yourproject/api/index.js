@@ -67,7 +67,7 @@ async function initDb() {
 }
 initDb();
 
-// ---------- Email Transporter (you can keep Gmail or Resend) ----------
+// ---------- Email Transporter (use Gmail or Resend) ----------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -120,7 +120,6 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 async function getOpenRouterResponse(messages) {
-  // messages: array of {role: "user"|"assistant", content: string}
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -130,7 +129,8 @@ async function getOpenRouterResponse(messages) {
       "X-Title": "AI Chat App",
     },
     body: JSON.stringify({
-      model: "mistralai/mistral-7b-instruct", // Free & fast, change if you prefer
+      // ✅ FIXED: using a free, working model
+      model: "meta-llama/llama-3.2-3b-instruct:free",
       messages: messages,
     }),
   });
@@ -447,7 +447,6 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    // Better error messages
     if (err.message.includes("OpenRouter")) {
       return res.status(500).json({ error: "AI service error: " + err.message });
     }
