@@ -156,7 +156,11 @@ if (document.getElementById('messages')) {
           <span class="title">${conv.title}</span>
           <button class="delete-btn" data-id="${conv.id}">✕</button>
         `;
-        div.querySelector('.title').addEventListener('click', () => openConversation(conv.id));
+        div.querySelector('.title').addEventListener('click', () => {
+          openConversation(conv.id);
+          // Close sidebar on mobile after selecting a chat
+          document.getElementById('sidebar').classList.remove('open');
+        });
         div.querySelector('.delete-btn').addEventListener('click', (e) => {
           e.stopPropagation();
           deleteConversation(conv.id);
@@ -208,11 +212,9 @@ if (document.getElementById('messages')) {
     }
   }
 
-  // ---------- NEW: Format code blocks with copy button ----------
+  // Format code blocks with copy button
   function formatContent(text) {
-    // Replace markdown code blocks ```lang \n code ``` with styled div + copy button
     return text.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-      // Escape HTML in code to prevent injection (just in case)
       const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return `
         <div class="code-block-wrapper">
@@ -223,14 +225,12 @@ if (document.getElementById('messages')) {
     });
   }
 
-  // Global copy function (accessible from HTML onclick)
   window.copyCode = function(btn) {
     const code = decodeURIComponent(btn.getAttribute('data-code'));
     navigator.clipboard.writeText(code).then(() => {
       btn.textContent = 'Copied!';
       setTimeout(() => btn.textContent = 'Copy', 2000);
     }).catch(() => {
-      // Fallback
       const textarea = document.createElement('textarea');
       textarea.value = code;
       document.body.appendChild(textarea);
@@ -242,22 +242,18 @@ if (document.getElementById('messages')) {
     });
   };
 
-  // Append message with formatting
   function appendMessage(role, content) {
     const container = document.getElementById('messages');
     const empty = document.getElementById('emptyState');
     if (empty) empty.style.display = 'none';
     const div = document.createElement('div');
     div.className = `message ${role}`;
-    // For assistant, format code blocks; for user, keep as plain text (but we can also format if needed)
     let formattedContent = role === 'assistant' ? formatContent(content) : content;
-    // Ensure newlines become <br> for plain text
     if (role === 'user') {
       formattedContent = formattedContent.replace(/\n/g, '<br>');
     }
     div.innerHTML = `<div class="role">${role}</div><div>${formattedContent}</div>`;
     container.appendChild(div);
-    // Trigger scroll after DOM update
     requestAnimationFrame(() => scrollToBottom());
   }
 
@@ -266,7 +262,6 @@ if (document.getElementById('messages')) {
     container.scrollTop = container.scrollHeight;
   }
 
-  // Send message
   async function sendMessage() {
     if (isProcessing) return;
     const input = document.getElementById('messageInput');
@@ -277,11 +272,9 @@ if (document.getElementById('messages')) {
     document.getElementById('sendBtn').disabled = true;
     input.disabled = true;
 
-    // Show user message
     appendMessage('user', text);
     input.value = '';
 
-    // Show typing
     document.getElementById('typingIndicator').style.display = 'flex';
 
     try {
@@ -293,7 +286,6 @@ if (document.getElementById('messages')) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to get response');
 
-      // Update conversation
       if (!currentConversationId) {
         currentConversationId = data.conversationId;
         document.getElementById('chatTitle').textContent = text.length > 50 ? text.slice(0, 50) + '...' : text;
@@ -319,6 +311,8 @@ if (document.getElementById('messages')) {
     document.getElementById('emptyState').style.display = 'flex';
     document.getElementById('chatTitle').textContent = 'New Chat';
     loadConversations();
+    // Close sidebar on mobile
+    document.getElementById('sidebar').classList.remove('open');
   });
 
   // Send button
@@ -347,6 +341,19 @@ if (document.getElementById('messages')) {
   // Sidebar toggle (mobile)
   document.getElementById('sidebarToggle').addEventListener('click', () => {
     document.getElementById('sidebar').classList.toggle('open');
+  });
+
+  // ---------- FIX: Close sidebar when clicking overlay ----------
+  document.getElementById('sidebarOverlay').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.remove('open');
+  });
+
+  // ---------- FIX: Also close sidebar when clicking a suggestion (optional) ----------
+  document.querySelectorAll('.suggestion').forEach(btn => {
+    btn.addEventListener('click', function() {
+      // After clicking suggestion, it will trigger send, so close sidebar
+      document.getElementById('sidebar').classList.remove('open');
+    });
   });
 
   // Init
