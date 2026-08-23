@@ -130,7 +130,7 @@ async function getOpenRouterResponse(messages) {
     },
     body: JSON.stringify({
       // ✅ FREE model that works on OpenRouter
-      model: "google/gemini-2.0-flash-exp:free",
+      model: "qwen/qwen-2.5-72b-instruct:free",
       messages: messages,
     }),
   });
