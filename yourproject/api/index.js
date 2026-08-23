@@ -12,6 +12,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Validate required env vars
+const requiredEnvVars = [
+  "DATABASE_URL",
+  "JWT_SECRET",
+  "OPENROUTER_API_KEY",
+  "APP_URL",
+];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.warn(`⚠️  Missing env var: ${envVar}`);
+  }
+}
+
 // Serve static files from repo root /public
 app.use(express.static(path.join(__dirname, "../../public")));
 app.get("/", (req, res) => {
@@ -55,9 +69,9 @@ async function initDb() {
         created_at BIGINT NOT NULL
       );
     `);
-    console.log("Database initialized");
+    console.log("✅ Database initialized");
   } catch (err) {
-    console.error("Database init error:", err);
+    console.error("❌ Database init error:", err);
   } finally {
     client.release();
   }
@@ -80,23 +94,29 @@ async function sendResetEmail(toEmail, resetLink) {
       subject: "Reset your password",
       html: `
         <h2>Reset your password</h2>
-        <p>Click <a href="${resetLink}">here</a> to reset. This link expires in 30 minutes.</p>
-        <p>Or paste this link: ${resetLink}</p>
+        <p>Click <a href="${resetLink}">here</a> to reset. Expires in 30 min.</p>
+        <p>Or paste: ${resetLink}</p>
       `,
     });
   } catch (err) {
-    console.error("SMTP Error:", err);
+    console.error("❌ SMTP Error:", err);
     throw err;
   }
 }
 
 // ---------- Helpers ----------
 function signToken(user) {
-  return jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign(
+    { id: user.id, email: user.email },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
+
 function emailValid(v) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
+
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
@@ -112,45 +132,88 @@ function authMiddleware(req, res, next) {
 // ---------- OpenRouter AI ----------
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
+
+// Free models that are reliably available
+const FREE_MODELS = [
+  "mistralai/mistral-7b-instruct:free",
+  "meta-llama/llama-2-7b-chat:free",
+];
 
 async function getAIResponse(messages) {
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      "HTTP-Referer": process.env.APP_URL || "https://your-app.vercel.app",
-      "X-Title": "AI Chat",
-    },
-    body: JSON.stringify({
-      model: "deepseek/deepseek-chat:free",
-      messages: messages,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter error (${response.status}): ${errorText}`);
+  if (!OPENROUTER_API_KEY) {
+    throw new Error("OPENROUTER_API_KEY not configured");
   }
 
-  const data = await response.json();
-  if (!data.choices || data.choices.length === 0) {
-    throw new Error("No response from AI");
+  let lastError = null;
+
+  for (const model of FREE_MODELS) {
+    try {
+      console.log(`🤖 Trying model: ${model}`);
+
+      const response = await fetch(OPENROUTER_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": APP_URL,
+          "X-Title": "Jhonny Chat",
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          temperature: 0.7,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        lastError = `${response.status}: ${data.error?.message || JSON.stringify(data)}`;
+        console.warn(`⚠️  Model ${model} failed: ${lastError}`);
+        continue;
+      }
+
+      if (!data.choices || data.choices.length === 0) {
+        lastError = `Model ${model} returned no choices`;
+        console.warn(`⚠️  ${lastError}`);
+        continue;
+      }
+
+      const aiText = data.choices[0].message.content;
+      console.log(`✅ Success with ${model}`);
+      return aiText;
+    } catch (err) {
+      lastError = err.message;
+      console.error(`❌ Model ${model} error:`, err.message);
+      continue;
+    }
   }
-  return data.choices[0].message.content;
+
+  throw new Error(`All AI models failed. Last error: ${lastError}`);
 }
 
-// ---------- AUTH ROUTES ----------
+// ---------- Routes ----------
+
 app.post("/api/register", async (req, res) => {
   const { name, email, password } = req.body || {};
   if (!name || !emailValid(email) || !password || password.length < 8) {
-    return res.status(400).json({ error: "Invalid name, email, or password (min 8 chars)." });
+    return res
+      .status(400)
+      .json({
+        error: "Invalid name, email, or password (min 8 chars).",
+      });
   }
   const client = await pool.connect();
   try {
-    const existing = await client.query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
+    const existing = await client.query(
+      "SELECT id FROM users WHERE email = $1",
+      [email.toLowerCase()]
+    );
     if (existing.rows.length > 0) {
-      return res.status(409).json({ error: "An account with this email already exists." });
+      return res
+        .status(409)
+        .json({ error: "An account with this email already exists." });
     }
     const passHash = await bcrypt.hash(password, 12);
     const result = await client.query(
@@ -159,9 +222,12 @@ app.post("/api/register", async (req, res) => {
     );
     const user = result.rows[0];
     const token = signToken(user);
-    res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email } });
+    res.status(201).json({
+      token,
+      user: { id: user.id, name: user.name, email: user.email },
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Register error:", err);
     res.status(500).json({ error: "Registration failed" });
   } finally {
     client.release();
@@ -170,20 +236,28 @@ app.post("/api/register", async (req, res) => {
 
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: "Email and password required" });
+  if (!email || !password)
+    return res.status(400).json({ error: "Email and password required" });
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT id, name, email, pass_hash FROM users WHERE email = $1", [email.toLowerCase()]);
+    const result = await client.query(
+      "SELECT id, name, email, pass_hash FROM users WHERE email = $1",
+      [email.toLowerCase()]
+    );
     if (result.rows.length === 0) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user.pass_hash);
-    if (!valid) return res.status(401).json({ error: "Invalid email or password" });
+    if (!valid)
+      return res.status(401).json({ error: "Invalid email or password" });
     const token = signToken(user);
-    res.json({ token, user: { id: user.id, name: user.name, email: user.email } });
+    res.json({
+      token,
+      user: { id: user.id, name: user.name, email: user.email },
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Login error:", err);
     res.status(500).json({ error: "Login failed" });
   } finally {
     client.release();
@@ -193,11 +267,15 @@ app.post("/api/login", async (req, res) => {
 app.get("/api/me", authMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT id, name, email FROM users WHERE id = $1", [req.user.id]);
-    if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+    const result = await client.query(
+      "SELECT id, name, email FROM users WHERE id = $1",
+      [req.user.id]
+    );
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: "User not found" });
     res.json({ user: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Get user error:", err);
     res.status(500).json({ error: "Failed to get user" });
   } finally {
     client.release();
@@ -206,12 +284,18 @@ app.get("/api/me", authMiddleware, async (req, res) => {
 
 app.post("/api/forgot-password", async (req, res) => {
   const { email } = req.body || {};
-  if (!email || !emailValid(email)) return res.status(400).json({ error: "Valid email required" });
+  if (!email || !emailValid(email))
+    return res.status(400).json({ error: "Valid email required" });
   const client = await pool.connect();
   try {
-    const result = await client.query("SELECT id FROM users WHERE email = $1", [email.toLowerCase()]);
+    const result = await client.query(
+      "SELECT id FROM users WHERE email = $1",
+      [email.toLowerCase()]
+    );
     if (result.rows.length === 0) {
-      return res.json({ message: "If that email is registered, a reset link has been sent." });
+      return res.json({
+        message: "If that email is registered, a reset link has been sent.",
+      });
     }
     const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = Date.now() + 30 * 60 * 1000;
@@ -219,11 +303,13 @@ app.post("/api/forgot-password", async (req, res) => {
       "INSERT INTO reset_tokens (token, email, expires_at, used) VALUES ($1, $2, $3, 0)",
       [token, email.toLowerCase(), expiresAt]
     );
-    const resetLink = `${process.env.APP_URL}/reset.html?token=${token}`;
+    const resetLink = `${APP_URL}/reset.html?token=${token}`;
     await sendResetEmail(email, resetLink);
-    res.json({ message: "If that email is registered, a reset link has been sent." });
+    res.json({
+      message: "If that email is registered, a reset link has been sent.",
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Forgot password error:", err);
     res.status(500).json({ error: "Failed to send reset email" });
   } finally {
     client.release();
@@ -233,7 +319,9 @@ app.post("/api/forgot-password", async (req, res) => {
 app.post("/api/reset-password", async (req, res) => {
   const { token, newPassword } = req.body || {};
   if (!token || !newPassword || newPassword.length < 8) {
-    return res.status(400).json({ error: "Token and password (min 8 chars) required" });
+    return res
+      .status(400)
+      .json({ error: "Token and password (min 8 chars) required" });
   }
   const client = await pool.connect();
   try {
@@ -246,20 +334,25 @@ app.post("/api/reset-password", async (req, res) => {
     }
     const { email, expires_at, used } = result.rows[0];
     if (used === 1) return res.status(400).json({ error: "Token already used" });
-    if (Date.now() > expires_at) return res.status(400).json({ error: "Token expired" });
+    if (Date.now() > expires_at)
+      return res.status(400).json({ error: "Token expired" });
     const passHash = await bcrypt.hash(newPassword, 12);
-    await client.query("UPDATE users SET pass_hash = $1 WHERE email = $2", [passHash, email]);
-    await client.query("UPDATE reset_tokens SET used = 1 WHERE token = $1", [token]);
+    await client.query("UPDATE users SET pass_hash = $1 WHERE email = $2", [
+      passHash,
+      email,
+    ]);
+    await client.query("UPDATE reset_tokens SET used = 1 WHERE token = $1", [
+      token,
+    ]);
     res.json({ message: "Password reset successfully" });
   } catch (err) {
-    console.error(err);
+    console.error("Reset password error:", err);
     res.status(500).json({ error: "Failed to reset password" });
   } finally {
     client.release();
   }
 });
 
-// ---------- CONVERSATION ROUTES ----------
 app.get("/api/conversations", authMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -269,7 +362,7 @@ app.get("/api/conversations", authMiddleware, async (req, res) => {
     );
     res.json({ conversations: result.rows });
   } catch (err) {
-    console.error(err);
+    console.error("Fetch conversations error:", err);
     res.status(500).json({ error: "Failed to fetch conversations" });
   } finally {
     client.release();
@@ -286,7 +379,7 @@ app.post("/api/conversations", authMiddleware, async (req, res) => {
     );
     res.status(201).json({ conversation: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Create conversation error:", err);
     res.status(500).json({ error: "Failed to create conversation" });
   } finally {
     client.release();
@@ -307,7 +400,7 @@ app.delete("/api/conversations/:id", authMiddleware, async (req, res) => {
     await client.query("DELETE FROM conversations WHERE id = $1", [id]);
     res.json({ message: "Conversation deleted" });
   } catch (err) {
-    console.error(err);
+    console.error("Delete conversation error:", err);
     res.status(500).json({ error: "Failed to delete conversation" });
   } finally {
     client.release();
@@ -327,10 +420,13 @@ app.patch("/api/conversations/:id", authMiddleware, async (req, res) => {
     if (check.rows.length === 0) {
       return res.status(404).json({ error: "Conversation not found" });
     }
-    await client.query("UPDATE conversations SET title = $1 WHERE id = $2", [title, id]);
+    await client.query("UPDATE conversations SET title = $1 WHERE id = $2", [
+      title,
+      id,
+    ]);
     res.json({ message: "Conversation renamed" });
   } catch (err) {
-    console.error(err);
+    console.error("Rename conversation error:", err);
     res.status(500).json({ error: "Failed to rename conversation" });
   } finally {
     client.release();
@@ -354,14 +450,13 @@ app.get("/api/conversations/:id/messages", authMiddleware, async (req, res) => {
     );
     res.json({ messages: result.rows });
   } catch (err) {
-    console.error(err);
+    console.error("Fetch messages error:", err);
     res.status(500).json({ error: "Failed to fetch messages" });
   } finally {
     client.release();
   }
 });
 
-// ---------- CHAT ROUTE ----------
 app.post("/api/chat", authMiddleware, async (req, res) => {
   const { conversationId, message } = req.body || {};
   if (!message) return res.status(400).json({ error: "Message required" });
@@ -385,34 +480,45 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       }
     }
 
+    // Save user message
     await client.query(
       "INSERT INTO messages (conversation_id, role, content, created_at) VALUES ($1, $2, $3, $4)",
       [convoId, "user", message, Date.now()]
     );
 
+    // Get conversation history
     const historyResult = await client.query(
       "SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
       [convoId]
     );
-    const history = historyResult.rows.map(row => ({
+    const history = historyResult.rows.map((row) => ({
       role: row.role === "user" ? "user" : "assistant",
       content: row.content,
     }));
 
+    console.log(`💬 Getting AI response for conversation ${convoId}...`);
+
+    // Get AI response
     const aiResponse = await getAIResponse(history);
 
+    // Save AI response
     await client.query(
       "INSERT INTO messages (conversation_id, role, content, created_at) VALUES ($1, $2, $3, $4)",
       [convoId, "assistant", aiResponse, Date.now()]
     );
 
+    // Auto-title on first message pair
     const countResult = await client.query(
       "SELECT COUNT(*) FROM messages WHERE conversation_id = $1",
       [convoId]
     );
     if (parseInt(countResult.rows[0].count) === 2) {
-      const title = message.length > 50 ? message.slice(0, 50) + "..." : message;
-      await client.query("UPDATE conversations SET title = $1 WHERE id = $2", [title, convoId]);
+      const title =
+        message.length > 50 ? message.slice(0, 50) + "..." : message;
+      await client.query("UPDATE conversations SET title = $1 WHERE id = $2", [
+        title,
+        convoId,
+      ]);
     }
 
     res.json({
@@ -420,9 +526,11 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       response: aiResponse,
     });
   } catch (err) {
-    console.error(err);
-    if (err.message.includes("OpenRouter")) {
-      return res.status(500).json({ error: "AI service error: " + err.message });
+    console.error("Chat error:", err);
+    if (err.message.includes("OpenRouter") || err.message.includes("AI")) {
+      return res
+        .status(503)
+        .json({ error: "AI service unavailable: " + err.message });
     }
     res.status(500).json({ error: "Failed to get AI response" });
   } finally {
@@ -430,22 +538,30 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
   }
 });
 
-// ---------- DELETE ACCOUNT ----------
 app.delete("/api/account", authMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("DELETE FROM users WHERE id = $1", [req.user.id]);
     res.json({ message: "Account deleted" });
   } catch (err) {
-    console.error(err);
+    console.error("Delete account error:", err);
     res.status(500).json({ error: "Failed to delete account" });
   } finally {
     client.release();
   }
 });
 
-// ---------- START ----------
+// Health check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 APP_URL: ${APP_URL}`);
+  console.log(`🔑 OpenRouter models: ${FREE_MODELS.join(", ")}`);
+});
 
 module.exports = app;
+                
