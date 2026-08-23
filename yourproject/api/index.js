@@ -67,7 +67,7 @@ async function initDb() {
 }
 initDb();
 
-// ---------- Email Transporter (use Gmail or Resend) ----------
+// ---------- Email Transporter (use Resend or Gmail) ----------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -129,8 +129,8 @@ async function getOpenRouterResponse(messages) {
       "X-Title": "AI Chat App",
     },
     body: JSON.stringify({
-      // ✅ FIXED: using a free, working model
-      model: "meta-llama/llama-3.2-3b-instruct:free",
+      // ✅ FREE model that works on OpenRouter
+      model: "google/gemini-2.0-flash-exp:free",
       messages: messages,
     }),
   });
