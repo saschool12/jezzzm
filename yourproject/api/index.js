@@ -6,7 +6,6 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const { Pool } = require("pg");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 const path = require("path");
 
 const app = express();
@@ -68,7 +67,7 @@ async function initDb() {
 }
 initDb();
 
-// ---------- Email Transporter ----------
+// ---------- Email Transporter (you can keep Gmail or Resend) ----------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -116,17 +115,37 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// ---------- Gemini AI ----------
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// ---------- OpenRouter AI ----------
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-async function getGeminiResponse(messages) {
-  // Using gemini-1.5-flash (faster and more reliable)
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-  const chat = model.startChat({
-    history: messages.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
+async function getOpenRouterResponse(messages) {
+  // messages: array of {role: "user"|"assistant", content: string}
+  const response = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      "HTTP-Referer": process.env.APP_URL || "https://your-app.vercel.app",
+      "X-Title": "AI Chat App",
+    },
+    body: JSON.stringify({
+      model: "mistralai/mistral-7b-instruct", // Free & fast, change if you prefer
+      messages: messages,
+    }),
   });
-  const result = await chat.sendMessage("");
-  return result.response.text();
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.choices || data.choices.length === 0) {
+    throw new Error("No response from OpenRouter");
+  }
+
+  return data.choices[0].message.content;
 }
 
 // ---------- AUTH ROUTES ----------
@@ -362,7 +381,7 @@ app.get("/api/conversations/:id/messages", authMiddleware, async (req, res) => {
   }
 });
 
-// ---------- CHAT (Gemini) ROUTE ----------
+// ---------- CHAT (OpenRouter) ROUTE ----------
 app.post("/api/chat", authMiddleware, async (req, res) => {
   const { conversationId, message } = req.body || {};
   if (!message) return res.status(400).json({ error: "Message required" });
@@ -393,23 +412,18 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       [convoId, "user", message, Date.now()]
     );
 
-    // Get conversation history for Gemini
+    // Get conversation history for context
     const historyResult = await client.query(
       "SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
       [convoId]
     );
     const history = historyResult.rows.map(row => ({
-      role: row.role === "user" ? "user" : "model",
+      role: row.role === "user" ? "user" : "assistant",
       content: row.content,
     }));
 
-    // Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const chat = model.startChat({
-      history: history.slice(0, -1).map(m => ({ role: m.role, parts: [{ text: m.content }] })),
-    });
-    const result = await chat.sendMessage(message);
-    const aiResponse = result.response.text();
+    // Call OpenRouter
+    const aiResponse = await getOpenRouterResponse(history);
 
     // Save AI response
     await client.query(
@@ -433,8 +447,9 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    if (err.message?.includes("API key")) {
-      return res.status(500).json({ error: "AI service configuration error" });
+    // Better error messages
+    if (err.message.includes("OpenRouter")) {
+      return res.status(500).json({ error: "AI service error: " + err.message });
     }
     res.status(500).json({ error: "Failed to get AI response" });
   } finally {
