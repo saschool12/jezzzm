@@ -208,16 +208,57 @@ if (document.getElementById('messages')) {
     }
   }
 
-  // Append message
+  // ---------- NEW: Format code blocks with copy button ----------
+  function formatContent(text) {
+    // Replace markdown code blocks ```lang \n code ``` with styled div + copy button
+    return text.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+      // Escape HTML in code to prevent injection (just in case)
+      const escapedCode = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return `
+        <div class="code-block-wrapper">
+          <button class="copy-btn" onclick="copyCode(this)" data-code="${encodeURIComponent(escapedCode)}">Copy</button>
+          <pre><code class="language-${lang || 'plaintext'}">${escapedCode}</code></pre>
+        </div>
+      `;
+    });
+  }
+
+  // Global copy function (accessible from HTML onclick)
+  window.copyCode = function(btn) {
+    const code = decodeURIComponent(btn.getAttribute('data-code'));
+    navigator.clipboard.writeText(code).then(() => {
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 2000);
+    }).catch(() => {
+      // Fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 2000);
+    });
+  };
+
+  // Append message with formatting
   function appendMessage(role, content) {
     const container = document.getElementById('messages');
     const empty = document.getElementById('emptyState');
     if (empty) empty.style.display = 'none';
     const div = document.createElement('div');
     div.className = `message ${role}`;
-    div.innerHTML = `<div class="role">${role}</div><div>${content}</div>`;
+    // For assistant, format code blocks; for user, keep as plain text (but we can also format if needed)
+    let formattedContent = role === 'assistant' ? formatContent(content) : content;
+    // Ensure newlines become <br> for plain text
+    if (role === 'user') {
+      formattedContent = formattedContent.replace(/\n/g, '<br>');
+    }
+    div.innerHTML = `<div class="role">${role}</div><div>${formattedContent}</div>`;
     container.appendChild(div);
-    scrollToBottom();
+    // Trigger scroll after DOM update
+    requestAnimationFrame(() => scrollToBottom());
   }
 
   function scrollToBottom() {
