@@ -503,7 +503,8 @@ height:2px;
 background:#aaa;
 margin:4px 0;
 border-radius:2px;
-}/* MESSAGES */
+}
+/* MESSAGES */
 
 .messages{
 flex:1;
@@ -904,8 +905,24 @@ backdrop-filter:blur(3px);
 z-index:8;
 }
 
-/* MOBILE */
+/* ========================================
+   RESPONSIVE: TABLETS & LANDSCAPE PHONES
+   ======================================== */
+@media(max-width:1024px) and (min-width:769px){
+  .messages{
+    padding:25px 35px;
+  }
+  .message{
+    max-width:82%;
+  }
+  .input-wrapper{
+    max-width:750px;
+  }
+}
 
+/* ========================================
+   RESPONSIVE: MOBILE & SMALL TABLETS
+   ======================================== */
 @media(max-width:768px){
 
 .sidebar{
@@ -913,7 +930,7 @@ position:fixed;
 left:-290px;
 top:0;
 bottom:0;
-width:275px;
+width:280px;
 z-index:20;
 transition:
 left .3s cubic-bezier(.4,0,.2,1);
@@ -946,17 +963,19 @@ display:none;
 }
 
 .messages{
-padding:25px 14px;
+padding:20px 16px;
+gap:14px;
 }
 
 .message{
-max-width:88%;
+max-width:90%;
 font-size:15px;
+padding:12px 16px;
 }
 
 .empty-state{
 width:100%;
-padding:20px;
+padding:15px;
 }
 
 .empty-state h2{
@@ -969,32 +988,42 @@ font-size:14px;
 
 .suggestions{
 width:100%;
+gap:6px;
 }
 
 .suggestion{
 flex:1;
 justify-content:center;
-min-width:120px;
+min-width:110px;
 font-size:13px;
+height:40px;
+padding:0 12px;
 }
 
 .input-wrapper{
-padding:7px 10px 13px;
+padding:6px 12px 14px;
+max-width:100%;
 }
 
 .input-footer span{
 font-size:10px;
 }
 
+.auth-card{
+max-width:95%;
+padding:25px 20px;
+}
 }
 
-/* SMALL PHONES */
-
+/* ========================================
+   RESPONSIVE: SMALL PHONES (under 430px)
+   ======================================== */
 @media(max-width:430px){
 
 .brand-logo{
 width:35px;
 height:35px;
+font-size:17px;
 }
 
 .brand-text strong{
@@ -1004,47 +1033,181 @@ font-size:15px;
 font-size:12px;
 }
 
-.empty-state h2{
-font-size:23px;
-}
-
-.hero-icon{
-margin-bottom:17px;
-}
-
-.hero-icon-inner{
-width:54px;
-height:54px;
-}
-
-.suggestions{
-display:grid;
-grid-template-columns:1fr;
-}
-
-.suggestion{
-width:100%;
-font-size:13px;
-}
-
-.message{
-max-width:94%;
-font-size:14px;
-}
-
-.input-area{
-border-radius:15px;
-}
-
-.send-btn{
-width:40px;
-height:40px;
+.sidebar{
+width:270px;
 }
 
 .chat-heading h1{
 font-size:16px;
 }
 
+.online-status{
+font-size:10px;
+}
+
+.empty-state h2{
+font-size:22px;
+}
+
+.empty-state p{
+font-size:13px;
+}
+
+.hero-icon{
+margin-bottom:14px;
+}
+
+.hero-icon-inner{
+width:50px;
+height:50px;
+font-size:22px;
+}
+
+.suggestions{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:6px;
+}
+
+.suggestion{
+width:100%;
+font-size:12px;
+height:38px;
+padding:0 10px;
+}
+
+.message{
+max-width:96%;
+font-size:14px;
+padding:10px 14px;
+}
+
+.input-area{
+border-radius:14px;
+padding:6px;
+}
+
+.send-btn{
+width:38px;
+height:38px;
+}
+
+.send-icon{
+font-size:18px;
+}
+
+.input-area textarea{
+font-size:14px;
+padding:9px 10px;
+min-height:38px;
+}
+
+.chat-header{
+height:54px;
+padding:0 12px;
+}
+
+.messages{
+padding:15px 12px;
+}
+
+.brand{
+margin-bottom:14px;
+}
+
+.new-chat-btn{
+height:40px;
+font-size:14px;
+}
+}
+
+/* ========================================
+   RESPONSIVE: AUTH PAGES MOBILE
+   ======================================== */
+@media(max-width:500px){
+
+.auth-container{
+padding:20px 12px;
+}
+
+.auth-card{
+padding:22px 18px;
+border-radius:18px;
+max-width:100%;
+}
+
+.auth-card h1{
+font-size:24px;
+}
+
+.auth-logo{
+width:38px;
+height:38px;
+font-size:18px;
+}
+
+.auth-input input{
+height:44px;
+font-size:14px;
+padding:0 12px 0 34px;
+}
+
+.input-icon{
+font-size:14px;
+left:11px;
+}
+
+.auth-submit{
+height:44px;
+font-size:14px;
+}
+
+.auth-brand-text strong{
+font-size:16px;
+}
+
+.auth-card-top p{
+font-size:13px;
+}
+
+}
+
+/* ========================================
+   RESPONSIVE: SHORT SCREENS
+   ======================================== */
+@media(max-height:650px){
+
+.auth-container{
+justify-content:flex-start;
+padding-top:20px;
+}
+
+.auth-brand{
+margin-bottom:12px;
+}
+
+.auth-card{
+padding:18px 16px;
+}
+
+.auth-card-top{
+margin-bottom:14px;
+}
+
+.auth-icon{
+margin-bottom:8px;
+width:40px;
+height:40px;
+font-size:17px;
+}
+
+.auth-card h1{
+font-size:21px;
+}
+
+.auth-form-group{
+margin-bottom:12px;
+}
 }
 
 /* SELECTION */
@@ -1077,7 +1240,6 @@ scroll-behavior:auto!important;
 }
 /* ========================================
    JHONNY AI AUTHENTICATION UI
-   LOGIN / REGISTER / FORGOT PASSWORD
    ======================================== */
 
 .auth-page{
@@ -1258,6 +1420,8 @@ letter-spacing:.1px;
 font-size:12px;
 color:#555;
 }
+
+
 /* CARD */
 
 .auth-card{
@@ -1544,8 +1708,6 @@ line-height:1.5;
 .success:not(:empty){
 display:block;
 }
-
-
 /* DIVIDER */
 
 .auth-divider{
@@ -1646,69 +1808,10 @@ transform:translateY(0) scale(1);
 }
 
 }
-/* MOBILE AUTH */
 
-@media(max-width:500px){
-
-.auth-container{
-padding:25px 15px;
-}
-
-.auth-card{
-padding:25px 19px;
-
-border-radius:19px;
-}
-
-.auth-card h1{
-font-size:24px;
-}
-
-.auth-logo{
-width:39px;
-height:39px;
-}
-
-.auth-input input{
-height:45px;
-font-size:14px;
-}
-
-}
-
-
-/* VERY SMALL SCREEN */
-
-@media(max-height:650px){
-
-.auth-container{
-justify-content:flex-start;
-padding-top:25px;
-}
-
-.auth-brand{
-margin-bottom:15px;
-}
-
-.auth-card{
-padding:22px 19px;
-}
-
-.auth-card-top{
-margin-bottom:18px;
-}
-
-.auth-icon{
-margin-bottom:10px;
-}
-
-.auth-card h1{
-font-size:22px;
-}
-
-}
-
-/* ===== CODE BLOCK WITH COPY BUTTON ===== */
+/* ========================================
+   CODE BLOCK WITH COPY BUTTON
+   ======================================== */
 
 .code-block-wrapper {
   position: relative;
@@ -1763,4 +1866,18 @@ font-size:22px;
 
 .message .code-block-wrapper {
   max-width: 100%;
+}
+
+/* Fix for very small screens for code blocks */
+@media(max-width:430px){
+  .code-block-wrapper pre {
+    font-size: 12px;
+    padding: 14px 12px 12px;
+  }
+  .copy-btn {
+    font-size: 10px;
+    padding: 3px 10px;
+    top: 5px;
+    right: 5px;
+  }
 }
