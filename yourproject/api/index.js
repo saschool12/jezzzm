@@ -13,7 +13,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ---------- Serve static files from the correct public folder ----------
+// ---------- Serve static files from the public folder (two levels up) ----------
 app.use(express.static(path.join(__dirname, "../../public")));
 
 // ---------- Root route (serves index.html) ----------
@@ -71,23 +71,28 @@ initDb();
 // ---------- Email Transporter ----------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: process.env.SMTP_SECURE !== "false",
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === "true",
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
 });
 
 async function sendResetEmail(toEmail, resetLink) {
-  await transporter.sendMail({
-    from: process.env.EMAIL_FROM,
-    to: toEmail,
-    subject: "Reset your password",
-    html: `
-      <h2>Reset your password</h2>
-      <p>Click below to reset your password. This link expires in 30 minutes.</p>
-      <a href="${resetLink}">Reset Password</a>
-      <p>Or paste this link: ${resetLink}</p>
-    `,
-  });
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: toEmail,
+      subject: "Reset your password",
+      html: `
+        <h2>Reset your password</h2>
+        <p>Click below to reset your password. This link expires in 30 minutes.</p>
+        <a href="${resetLink}">Reset Password</a>
+        <p>Or paste this link: ${resetLink}</p>
+      `,
+    });
+  } catch (err) {
+    console.error("SMTP Error:", err);
+    throw err;
+  }
 }
 
 // ---------- Helpers ----------
@@ -115,7 +120,8 @@ function authMiddleware(req, res, next) {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function getGeminiResponse(messages) {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+  // Using gemini-1.5-flash (faster and more reliable)
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   const chat = model.startChat({
     history: messages.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
   });
@@ -398,7 +404,7 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     }));
 
     // Call Gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const chat = model.startChat({
       history: history.slice(0, -1).map(m => ({ role: m.role, parts: [{ text: m.content }] })),
     });
