@@ -134,10 +134,14 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
-// Free models that are reliably available
+// Free models that are reliably available on OpenRouter
+// Check https://openrouter.ai/models for current free options
 const FREE_MODELS = [
+  "gryphe/mythomax-l2-13b:free",
+  "undi95/toppy-m-7b:free",
   "mistralai/mistral-7b-instruct:free",
   "meta-llama/llama-2-7b-chat:free",
+  "openrouter/auto", // Fallback to OpenRouter's auto selection
 ];
 
 async function getAIResponse(messages) {
@@ -169,8 +173,15 @@ async function getAIResponse(messages) {
       const data = await response.json();
 
       if (!response.ok) {
-        lastError = `${response.status}: ${data.error?.message || JSON.stringify(data)}`;
-        console.warn(`⚠️  Model ${model} failed: ${lastError}`);
+        const errorMsg = data.error?.message || JSON.stringify(data);
+        lastError = `${response.status}: ${errorMsg}`;
+        console.warn(`⚠️  Model ${model} failed: ${errorMsg}`);
+        
+        // If 404 and mentions "unavailable", skip to next model
+        if (response.status === 404 && errorMsg.includes("unavailable")) {
+          console.log(`   → This model is no longer free. Trying next...`);
+          continue;
+        }
         continue;
       }
 
@@ -190,7 +201,9 @@ async function getAIResponse(messages) {
     }
   }
 
-  throw new Error(`All AI models failed. Last error: ${lastError}`);
+  const helpMsg = `All AI models failed. Last error: ${lastError}\n📌 Free models on OpenRouter change frequently. Check: https://openrouter.ai/models?maxPrice=0`;
+  console.error(`❌ ${helpMsg}`);
+  throw new Error(helpMsg);
 }
 
 // ---------- Routes ----------
@@ -527,10 +540,17 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error("Chat error:", err);
-    if (err.message.includes("OpenRouter") || err.message.includes("AI")) {
-      return res
-        .status(503)
-        .json({ error: "AI service unavailable: " + err.message });
+    if (
+      err.message.includes("OpenRouter") ||
+      err.message.includes("AI") ||
+      err.message.includes("models failed")
+    ) {
+      return res.status(503).json({
+        error:
+          "AI service error: " +
+          err.message +
+          " → Check https://openrouter.ai/models?maxPrice=0 for free models",
+      });
     }
     res.status(500).json({ error: "Failed to get AI response" });
   } finally {
@@ -564,4 +584,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
-                
+  
